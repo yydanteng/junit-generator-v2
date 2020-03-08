@@ -12,7 +12,8 @@ public class TemplateEntry {
 
     private final List<MethodComposite> methodList;
     private final List<MethodComposite> privateMethodList;
-    private final List<String> fieldList;
+    private final List<FieldComposite> fieldList;
+    private final List<String> importPackageList;
 
     private String className;
     private String packageName;
@@ -21,12 +22,14 @@ public class TemplateEntry {
                          String packageName,
                          List<MethodComposite> methodList,
                          List<MethodComposite> privateMethodList,
-                         List<String> fieldList) {
+                         List<FieldComposite> fieldList,
+                         List<String> importPackageList) {
         this.className = className;
         this.packageName = packageName;
         this.methodList = methodList;
         this.privateMethodList = privateMethodList;
         this.fieldList = fieldList;
+        this.importPackageList = importPackageList;
     }
 
     public String getClassName() {
@@ -37,7 +40,7 @@ public class TemplateEntry {
         return packageName;
     }
 
-    public List<String> getFieldList() {
+    public List<FieldComposite> getFieldList() {
         return fieldList;
     }
 
@@ -47,5 +50,9 @@ public class TemplateEntry {
 
     public List<MethodComposite> getPrivateMethodList() {
         return privateMethodList;
+    }
+
+    public List<String> getImportPackageList() {
+        return importPackageList;
     }
 }

@@ -1,5 +1,6 @@
 package org.intellij.plugins.junitgen.action;
 
+import com.intellij.codeInsight.AnnotationUtil;
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.actionSystem.DataKeys;
 import com.intellij.openapi.application.ApplicationManager;
@@ -15,6 +16,7 @@ import org.apache.velocity.runtime.resource.util.StringResourceRepository;
 import org.apache.velocity.runtime.resource.util.StringResourceRepositoryImpl;
 import org.intellij.plugins.junitgen.JUnitGeneratorContext;
 import org.intellij.plugins.junitgen.JUnitGeneratorFileCreator;
+import org.intellij.plugins.junitgen.bean.FieldComposite;
 import org.intellij.plugins.junitgen.bean.MethodComposite;
 import org.intellij.plugins.junitgen.bean.TemplateEntry;
 import org.intellij.plugins.junitgen.util.DateTool;
@@ -40,6 +42,8 @@ public class JUnitGeneratorActionHandler extends EditorWriteActionHandler {
     private static final Logger logger = JUnitGeneratorUtil.getLogger(JUnitGeneratorActionHandler.class);
 
     private static final String VIRTUAL_TEMPLATE_NAME = "junitgenerator.vm";
+
+    private static final List<String> TARGET_ANNOTATION_LIST = Arrays.asList("javax.annotation.Resource", "org.springframework.beans.factory.annotation.Autowired");
 
     private final String templateKey;
 
@@ -92,10 +96,12 @@ public class JUnitGeneratorActionHandler extends EditorWriteActionHandler {
 
                         List<PsiMethod> methodList = new ArrayList<PsiMethod>();
                         List<PsiMethod> pMethodList = new ArrayList<PsiMethod>();
-                        List<String> fieldList = new ArrayList<String>();
+                        List<PsiField> fieldList = new ArrayList<>();
 
                         List<MethodComposite> methodCompositeList = new ArrayList<MethodComposite>();
                         List<MethodComposite> privateMethodCompositeList = new ArrayList<MethodComposite>();
+                        List<FieldComposite> fieldCompositeList = new ArrayList<FieldComposite>();
+                        List<String> importPackageList = new ArrayList<>();
 
                         buildMethodList(psiClass.getMethods(), methodList, !getPrivate);
                         buildMethodList(psiClass.getMethods(), pMethodList, getPrivate);
@@ -110,12 +116,15 @@ public class JUnitGeneratorActionHandler extends EditorWriteActionHandler {
 
                         processMethods(genCtx, methodList, methodCompositeList);
                         processMethods(genCtx, pMethodList, privateMethodCompositeList);
+                        processFields(fieldList, fieldCompositeList);
+                        processImportPackage(fieldList, importPackageList);
 
                         entryList.add(new TemplateEntry(genCtx.getClassName(false),
                                 genCtx.getPackageName(),
                                 methodCompositeList,
                                 privateMethodCompositeList,
-                                fieldList));
+                                fieldCompositeList,
+                                importPackageList));
                         process(genCtx, entryList);
                     }
                 } catch (Exception e) {
@@ -125,6 +134,28 @@ public class JUnitGeneratorActionHandler extends EditorWriteActionHandler {
         }
     }
 
+    private void processFields(List<PsiField> fieldList, List<FieldComposite> fieldCompositeList) {
+        for (PsiField field : fieldList) {
+            FieldComposite fieldComposite = new FieldComposite();
+            fieldComposite.setField(field);
+            fieldComposite.setFieldName(field.getName());
+            fieldComposite.setFieldType(field.getType().getPresentableText());
+            fieldCompositeList.add(fieldComposite);
+        }
+    }
+
+    private void processImportPackage(List<PsiField> fieldList, List<String> importPackageList) {
+        for (PsiField field : fieldList) {
+            if (!isBasicType(field.getType())) {
+                importPackageList.add(field.getType().getCanonicalText());
+            }
+
+        }
+    }
+
+    private boolean isBasicType(PsiType psiType) {
+        return psiType instanceof PsiPrimitiveType || PsiPrimitiveType.getAllBoxedTypeNames().contains(psiType.getCanonicalText());
+    }
 
     /**
      * Creates a list of methods with set and get methods combined together.
@@ -387,13 +418,22 @@ public class JUnitGeneratorActionHandler extends EditorWriteActionHandler {
 
     /**
      * Builds a list of class scope fields from an array of PsiFields
+     * only reserve fields not modified by static, final, and with Annotations javax.annotation.Resource","org.springframework.beans.factory.annotation.Autowired
      *
      * @param fields    an array of fields
      * @param fieldList list to be populated
      */
-    private void buildFieldList(PsiField[] fields, List<String> fieldList) {
+    private void buildFieldList(PsiField[] fields, List<PsiField> fieldList) {
         for (PsiField field : fields) {
-            fieldList.add(field.getName());
+            if (field instanceof PsiEnumConstant) {
+                continue;
+            }
+            if (field.hasModifierProperty(PsiModifier.STATIC) || field.hasModifierProperty(PsiModifier.FINAL)) {
+                continue;
+            }
+            if (AnnotationUtil.isAnnotated(field, TARGET_ANNOTATION_LIST)) {
+                fieldList.add(field);
+            }
         }
     }
 
@@ -449,7 +489,9 @@ public class JUnitGeneratorActionHandler extends EditorWriteActionHandler {
             final VelocityContext context = new VelocityContext();
             context.put("entryList", entryList);
             context.put("today", JUnitGeneratorUtil.formatDate("MM/dd/yyyy"));
+            context.put("year", JUnitGeneratorUtil.formatDate("yyyy"));
             context.put("date", new DateTool());
+            context.put("user", System.getProperty("user.name"));
 
             final Template template = ve.getTemplate(VIRTUAL_TEMPLATE_NAME);
             final StringWriter writer = new StringWriter();
